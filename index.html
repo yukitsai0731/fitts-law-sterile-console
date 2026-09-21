@@ -1,0 +1,514 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sterile Console — Fitts' Law Study</title>
+<style>
+  :root{
+    --bg: #0A1420;
+    --panel: #101F30;
+    --panel-line: #1E3348;
+    --text: #E7EEF2;
+    --muted: #7C93A3;
+    --cyan: #3FC7C2;
+    --cyan-dim: #1F6B68;
+    --amber: #E8A33D;
+    --red: #E15353;
+  }
+  *{ box-sizing: border-box; }
+  html,body{
+    margin:0; padding:0; height:100%;
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'IBM Plex Sans', 'Segoe UI', system-ui, sans-serif;
+  }
+  #app{
+    min-height:100vh;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    padding: 28px 16px 60px;
+  }
+  .wrap{ width:100%; max-width: 960px; }
+
+  h1{
+    font-size: 1.5rem;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+    margin: 0 0 4px;
+  }
+  .subtitle{
+    color: var(--muted);
+    font-size: 0.92rem;
+    margin: 0 0 24px;
+    line-height:1.5;
+  }
+  .panel{
+    background: var(--panel);
+    border: 1px solid var(--panel-line);
+    border-radius: 10px;
+    padding: 28px;
+  }
+  .panel + .panel{ margin-top:16px; }
+  p{ line-height:1.6; color: var(--text); }
+  .muted{ color: var(--muted); }
+  button{
+    font-family: inherit;
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: #08161A;
+    background: var(--cyan);
+    border: none;
+    border-radius: 6px;
+    padding: 11px 22px;
+    cursor: pointer;
+  }
+  button:hover{ filter: brightness(1.08); }
+  button.secondary{
+    background: transparent;
+    color: var(--text);
+    border: 1px solid var(--panel-line);
+  }
+  button:disabled{ opacity:0.4; cursor:not-allowed; }
+
+  .status-bar{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    padding: 10px 16px;
+    background: var(--panel);
+    border: 1px solid var(--panel-line);
+    border-radius: 8px;
+    margin-bottom: 14px;
+    font-size: 0.85rem;
+  }
+  .status-item{ display:flex; flex-direction:column; gap:2px; }
+  .status-item .label{ color: var(--muted); font-size:0.72rem; }
+  .status-item .value{ font-weight:600; }
+  .badge{
+    display:inline-block;
+    padding: 3px 10px;
+    border-radius: 20px;
+    font-size: 0.72rem;
+    font-weight:600;
+  }
+  .badge.baseline{ background: rgba(63,199,194,0.15); color: var(--cyan); }
+  .badge.sterile{ background: rgba(232,163,61,0.15); color: var(--amber); }
+
+  #canvasHolder{
+    position:relative;
+    width:100%;
+    border-radius: 10px;
+    overflow:hidden;
+    border: 1px solid var(--panel-line);
+    background:
+      radial-gradient(circle at 50% 50%, #0E1E2E 0%, #0A1620 70%);
+  }
+  canvas{ display:block; width:100%; height:auto; cursor:none; }
+
+  #summaryTable{
+    width:100%;
+    border-collapse: collapse;
+    font-size: 0.85rem;
+    margin-top: 10px;
+  }
+  #summaryTable th, #summaryTable td{
+    text-align:left;
+    padding: 8px 10px;
+    border-bottom: 1px solid var(--panel-line);
+  }
+  #summaryTable th{ color: var(--muted); font-weight:500; font-size:0.75rem; }
+
+  .flex-row{ display:flex; gap:12px; flex-wrap:wrap; align-items:center; }
+  .hint{ font-size:0.8rem; color:var(--muted); margin-top:10px; }
+  a{ color: var(--cyan); }
+</style>
+</head>
+<body>
+<div id="app">
+  <div class="wrap">
+    <h1>Sterile Console</h1>
+    <p class="subtitle">A touchless pointing study for the operating room — comparing direct-mouse control against a simulated gesture-tracked, no-touch control mode.</p>
+
+    <!-- INTRO -->
+    <div id="screen-intro" class="panel">
+      <p><strong>Scenario.</strong> A surgeon needs to review imaging (CT slices, angiography) mid-procedure without breaking sterility. Two control modes are compared:</p>
+      <p>
+        <strong style="color:var(--cyan)">Baseline</strong> — direct mouse control, as if a non-scrubbed assistant were operating the console.<br>
+        <strong style="color:var(--amber)">Sterile / Touchless</strong> — the same pointing task, but the on-screen cursor now behaves like an optically-tracked hand gesture: it lags behind your real movement and carries a small unsupported-arm tremor.
+      </p>
+      <p>You will alternately click two glowing targets as they appear, first under Baseline, then under Sterile. 9 distance/width combinations × 6 repetitions are tested per mode (108 taps total). Try to be as fast <em>and</em> accurate as you can — errors are recorded.</p>
+      <p class="hint">Tip: record your screen now if this run is the one you intend to submit.</p>
+      <button id="btnStart">Begin Baseline Block</button>
+    </div>
+
+    <!-- BLOCK INTRO -->
+    <div id="screen-blockintro" class="panel" style="display:none;">
+      <p id="blockIntroText"></p>
+      <button id="btnBlockStart">Start</button>
+    </div>
+
+    <!-- EXPERIMENT -->
+    <div id="screen-experiment" style="display:none; width:100%;">
+      <div class="status-bar">
+        <div class="status-item">
+          <span class="label">CONDITION</span>
+          <span class="value"><span id="condBadge" class="badge baseline">Baseline</span></span>
+        </div>
+        <div class="status-item">
+          <span class="label">TRIAL</span>
+          <span class="value"><span id="trialNum">0</span> / <span id="trialTotal">54</span></span>
+        </div>
+        <div class="status-item">
+          <span class="label">DISTANCE (A)</span>
+          <span class="value" id="curA">–</span>
+        </div>
+        <div class="status-item">
+          <span class="label">WIDTH (W)</span>
+          <span class="value" id="curW">–</span>
+        </div>
+        <div class="status-item">
+          <span class="label">ERRORS</span>
+          <span class="value" id="errCount">0</span>
+        </div>
+      </div>
+      <div id="canvasHolder">
+        <canvas id="stage" width="900" height="460"></canvas>
+      </div>
+    </div>
+
+    <!-- RESULTS -->
+    <div id="screen-results" class="panel" style="display:none;">
+      <p><strong>Session complete.</strong> Summary below — export the raw trial data as CSV for your regression and scatter plot.</p>
+      <table id="summaryTable">
+        <thead><tr><th>Condition</th><th>Trials</th><th>Mean MT (ms)</th><th>Mean ID (bits)</th><th>Errors</th></tr></thead>
+        <tbody id="summaryBody"></tbody>
+      </table>
+      <div class="flex-row" style="margin-top:18px;">
+        <button id="btnExport">Export CSV</button>
+        <button id="btnRestart" class="secondary">Run Again</button>
+      </div>
+      <p class="hint">CSV columns: trial, condition, A_px, W_px, ID_bits, MT_ms, hit, error_px</p>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+  // ---------- experiment design ----------
+  const DISTANCES = [200, 400, 600];
+  const WIDTHS = [20, 40, 80];
+  const REPS = 6;
+  const CONDITIONS = ["baseline", "sterile"];
+
+  function buildCombos(){
+    const combos = [];
+    for(const A of DISTANCES){
+      for(const W of WIDTHS){
+        combos.push({A, W});
+      }
+    }
+    // shuffle combo order
+    for(let i=combos.length-1;i>0;i--){
+      const j = Math.floor(Math.random()*(i+1));
+      [combos[i],combos[j]] = [combos[j],combos[i]];
+    }
+    return combos;
+  }
+
+  let sessionData = []; // collected trial rows
+  let blockQueue = [];  // sequence of {A,W} taps for current block, built from combos*REPS
+  let blockIndex = 0;
+  let condition = "baseline";
+  let condBlockNum = 0;
+
+  let awaitingFirstClick = true; // true before the very first (untimed) click of a combo run
+  let currentCombo = null;
+  let repInCombo = 0;
+  let activeSide = "left"; // which target is the live target
+  let targetPos = {x:0,y:0,r:0};
+  let otherPos = {x:0,y:0,r:0};
+  let trialStartTime = 0;
+  let errorsThisCondition = 0;
+
+  // canvas / cursor simulation
+  const canvas = document.getElementById('stage');
+  const ctx = canvas.getContext('2d');
+  const CW = canvas.width, CH = canvas.height;
+  let realMouse = {x: CW/2, y: CH/2};
+  let dispCursor = {x: CW/2, y: CH/2};
+  let jitterTarget = {x:0,y:0};
+  let jitterCurrent = {x:0,y:0};
+  let lastJitterUpdate = 0;
+  let history = []; // {t,x,y} for latency simulation
+
+  function conditionParams(){
+    if(condition === "sterile"){
+      return {latencyMs: 140, jitterAmp: 5, jitterPeriod: 90};
+    }
+    return {latencyMs: 0, jitterAmp: 0, jitterPeriod: 999999};
+  }
+
+  canvas.addEventListener('mousemove', (e)=>{
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = CW / rect.width, scaleY = CH / rect.height;
+    realMouse.x = (e.clientX - rect.left) * scaleX;
+    realMouse.y = (e.clientY - rect.top) * scaleY;
+    history.push({t: performance.now(), x: realMouse.x, y: realMouse.y});
+    if(history.length > 200) history.shift();
+  });
+
+  canvas.addEventListener('click', (e)=>{
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = CW / rect.width, scaleY = CH / rect.height;
+    const cx = (e.clientX - rect.left) * scaleX;
+    const cy = (e.clientY - rect.top) * scaleY;
+    handleClick(cx, cy);
+  });
+
+  function sampleAtDelay(delayMs){
+    if(delayMs <= 0 || history.length === 0) return {x: realMouse.x, y: realMouse.y};
+    const targetT = performance.now() - delayMs;
+    let best = history[0];
+    for(let i=history.length-1;i>=0;i--){
+      if(history[i].t <= targetT){ best = history[i]; break; }
+      best = history[i];
+    }
+    return {x: best.x, y: best.y};
+  }
+
+  function updateCursor(now){
+    const {latencyMs, jitterAmp, jitterPeriod} = conditionParams();
+    const delayed = sampleAtDelay(latencyMs);
+
+    if(now - lastJitterUpdate > jitterPeriod){
+      jitterTarget.x = (Math.random()*2-1) * jitterAmp;
+      jitterTarget.y = (Math.random()*2-1) * jitterAmp;
+      lastJitterUpdate = now;
+    }
+    jitterCurrent.x += (jitterTarget.x - jitterCurrent.x) * 0.15;
+    jitterCurrent.y += (jitterTarget.y - jitterCurrent.y) * 0.15;
+
+    dispCursor.x = delayed.x + jitterCurrent.x;
+    dispCursor.y = delayed.y + jitterCurrent.y;
+  }
+
+  // ---------- drawing ----------
+  function draw(now){
+    ctx.clearRect(0,0,CW,CH);
+
+    // faint horizon line for OR-console feel
+    ctx.strokeStyle = "rgba(63,199,194,0.08)";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(0, CH/2); ctx.lineTo(CW, CH/2);
+    ctx.stroke();
+
+    if(currentCombo){
+      // inactive target
+      drawTarget(otherPos, false);
+      // active target
+      drawTarget(targetPos, true);
+    }
+
+    // cursor
+    updateCursor(now);
+    ctx.beginPath();
+    ctx.fillStyle = condition === "sterile" ? "rgba(232,163,61,0.9)" : "rgba(231,238,242,0.9)";
+    ctx.arc(dispCursor.x, dispCursor.y, 6, 0, Math.PI*2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.strokeStyle = condition === "sterile" ? "rgba(232,163,61,0.35)" : "rgba(231,238,242,0.3)";
+    ctx.lineWidth = 1;
+    ctx.arc(dispCursor.x, dispCursor.y, 14, 0, Math.PI*2);
+    ctx.stroke();
+
+    requestAnimationFrame(draw);
+  }
+
+  function drawTarget(pos, active){
+    ctx.beginPath();
+    ctx.arc(pos.x, pos.y, pos.r, 0, Math.PI*2);
+    if(active){
+      const grad = ctx.createRadialGradient(pos.x,pos.y,0,pos.x,pos.y,pos.r);
+      grad.addColorStop(0, "rgba(63,199,194,0.9)");
+      grad.addColorStop(1, "rgba(63,199,194,0.25)");
+      ctx.fillStyle = grad;
+      ctx.fill();
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = "#3FC7C2";
+      ctx.stroke();
+    } else {
+      ctx.strokeStyle = "rgba(124,147,163,0.5)";
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+    }
+  }
+
+  // ---------- trial logic ----------
+  function layoutForCombo(combo){
+    const cx = CW/2, cy = CH/2;
+    const half = combo.A/2;
+    const left = {x: cx - half, y: cy, r: combo.W/2};
+    const right = {x: cx + half, y: cy, r: combo.W/2};
+    return {left, right};
+  }
+
+  function startCombo(combo){
+    currentCombo = combo;
+    repInCombo = 0;
+    awaitingFirstClick = true;
+    activeSide = "left";
+    const L = layoutForCombo(combo);
+    targetPos = L.left;
+    otherPos = L.right;
+    document.getElementById('curA').textContent = combo.A + ' px';
+    document.getElementById('curW').textContent = combo.W + ' px';
+  }
+
+  function nextTarget(){
+    activeSide = activeSide === "left" ? "right" : "left";
+    const L = layoutForCombo(currentCombo);
+    targetPos = activeSide === "left" ? L.left : L.right;
+    otherPos = activeSide === "left" ? L.right : L.left;
+    trialStartTime = performance.now();
+  }
+
+  function handleClick(x,y){
+    if(!currentCombo) return;
+    const dx = x - targetPos.x, dy = y - targetPos.y;
+    const dist = Math.sqrt(dx*dx+dy*dy);
+    const hit = dist <= targetPos.r;
+
+    if(awaitingFirstClick){
+      // only counts as starting point if it's a hit on the (left) target
+      if(!hit) return;
+      awaitingFirstClick = false;
+      nextTarget();
+      return;
+    }
+
+    const mt = performance.now() - trialStartTime;
+    const ID = Math.log2(currentCombo.A / currentCombo.W + 1);
+    if(!hit) errorsThisCondition++;
+    document.getElementById('errCount').textContent = errorsThisCondition;
+
+    sessionData.push({
+      trial: sessionData.length + 1,
+      condition: condition,
+      A: currentCombo.A,
+      W: currentCombo.W,
+      ID: ID.toFixed(4),
+      MT: mt.toFixed(1),
+      hit: hit ? 1 : 0,
+      error_px: dist.toFixed(2)
+    });
+
+    repInCombo++;
+    document.getElementById('trialNum').textContent = Math.min(
+      blockIndex*REPS + repInCombo, blockQueue.length*REPS
+    );
+
+    if(repInCombo >= REPS){
+      blockIndex++;
+      if(blockIndex >= blockQueue.length){
+        finishBlock();
+        return;
+      }
+      startCombo(blockQueue[blockIndex]);
+    } else {
+      nextTarget();
+    }
+  }
+
+  // ---------- flow control ----------
+  function beginBlock(cond){
+    condition = cond;
+    errorsThisCondition = 0;
+    document.getElementById('errCount').textContent = 0;
+    blockQueue = buildCombos();
+    blockIndex = 0;
+    document.getElementById('trialTotal').textContent = blockQueue.length * REPS;
+    document.getElementById('trialNum').textContent = 0;
+    const badge = document.getElementById('condBadge');
+    badge.textContent = cond === "baseline" ? "Baseline" : "Sterile / Touchless";
+    badge.className = "badge " + cond;
+    startCombo(blockQueue[0]);
+    showScreen('experiment');
+  }
+
+  function finishBlock(){
+    currentCombo = null;
+    if(condition === "baseline"){
+      showBlockIntro(
+        "Baseline block complete. Next: the Sterile / Touchless block. The cursor will now lag slightly and drift, as it would under camera-based gesture tracking. Point at the same targets, adjusting for the altered feedback.",
+        () => beginBlock("sterile")
+      );
+    } else {
+      showResults();
+    }
+  }
+
+  function showBlockIntro(text, onStart){
+    document.getElementById('blockIntroText').textContent = text;
+    const btn = document.getElementById('btnBlockStart');
+    btn.onclick = () => { onStart(); };
+    showScreen('blockintro');
+  }
+
+  function showScreen(name){
+    ['intro','blockintro','experiment','results'].forEach(n=>{
+      document.getElementById('screen-'+n).style.display = (n===name) ? (n==='experiment' ? 'block' : 'block') : 'none';
+    });
+  }
+
+  function showResults(){
+    showScreen('results');
+    const body = document.getElementById('summaryBody');
+    body.innerHTML = '';
+    for(const cond of CONDITIONS){
+      const rows = sessionData.filter(r=>r.condition===cond);
+      if(rows.length===0) continue;
+      const meanMT = rows.reduce((s,r)=>s+parseFloat(r.MT),0)/rows.length;
+      const meanID = rows.reduce((s,r)=>s+parseFloat(r.ID),0)/rows.length;
+      const errs = rows.filter(r=>r.hit===0).length;
+      const tr = document.createElement('tr');
+      tr.innerHTML = `<td>${cond}</td><td>${rows.length}</td><td>${meanMT.toFixed(1)}</td><td>${meanID.toFixed(2)}</td><td>${errs}</td>`;
+      body.appendChild(tr);
+    }
+  }
+
+  function exportCSV(){
+    const header = ['trial','condition','A_px','W_px','ID_bits','MT_ms','hit','error_px'];
+    const lines = [header.join(',')];
+    for(const r of sessionData){
+      lines.push([r.trial,r.condition,r.A,r.W,r.ID,r.MT,r.hit,r.error_px].join(','));
+    }
+    const blob = new Blob([lines.join('\n')], {type:'text/csv'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'fitts_sterile_console_data.csv';
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  // ---------- wiring ----------
+  document.getElementById('btnStart').onclick = () => {
+    showBlockIntro(
+      "Baseline block: standard mouse control. Click the highlighted target as it alternates from side to side, as quickly and accurately as you can.",
+      () => beginBlock("baseline")
+    );
+  };
+  document.getElementById('btnExport').onclick = exportCSV;
+  document.getElementById('btnRestart').onclick = () => {
+    sessionData = [];
+    showScreen('intro');
+  };
+
+  requestAnimationFrame(draw);
+})();
+</script>
+</body>
+</html>
